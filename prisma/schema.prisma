@@ -1,0 +1,332 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BusinessStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum MemberRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  IN_SERVICE
+  COMPLETED
+  CANCELED
+  EXPIRED
+  NO_SHOW
+}
+
+enum NotificationType {
+  JOINED
+  NEAR_TURN
+  YOUR_TURN
+  EXPIRED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  CANCELED
+}
+
+enum QueueEventType {
+  JOINED
+  CALLED
+  STARTED
+  COMPLETED
+  CANCELED
+  EXPIRED
+  NO_SHOW
+  ASSIGNED
+}
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  HIDDEN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  memberships   BusinessMember[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("users")
+}
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String  @map("user_id")
+  type               String
+  provider           String
+  providerAccountId  String  @map("provider_account_id")
+  refresh_token      String? @db.Text
+  access_token       String? @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String? @db.Text
+  session_state      String?
+ 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+ 
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+ 
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+ 
+  @@map("sessions")
+}
+ 
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+ 
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Business {
+  id            String         @id @default(cuid())
+  name          String         @db.VarChar(150)
+  slug          String         @unique @db.VarChar(100)
+  description   String?        @db.Text
+  logoUrl       String?
+  phone         String?        @db.VarChar(20)
+  whatsapp      String?        @db.VarChar(20)
+  address       String?
+  timezone      String         @default("America/Sao_Paulo")
+  status        BusinessStatus @default(ACTIVE)
+  members       BusinessMember[]
+  services      Service[]
+  professionals Professional[]
+  queueSettings QueueSettings?
+  queueEntries  QueueEntry[]
+  queueCounters QueueCounter[]
+  comments      Comment[]
+  invitations BusinessInvitation[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("businesses")
+}
+
+model BusinessMember {
+  id         String     @id @default(cuid())
+  userId     String
+  businessId String
+  role       MemberRole @default(STAFF)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt  DateTime   @default(now())
+
+  @@unique([userId, businessId])
+  @@index([businessId, role])
+  @@map("business_members")
+}
+model BusinessInvitation {
+  id         String    @id @default(cuid())
+  businessId String
+  email      String
+  name       String
+  role       MemberRole @default(STAFF)
+
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  business   Business  @relation(  fields: [businessId],   references: [id],   onDelete: Cascade )
+
+  @@unique([businessId, email])
+  @@index([email])
+}
+
+model Service {
+  id                   String                @id @default(cuid())
+  businessId           String
+  name                 String                @db.VarChar(120)
+  description          String?               @db.Text
+  durationMinutes      Int                   @default(30)
+  price                Decimal?              @db.Decimal(10, 2)
+  active               Boolean               @default(true)
+  business             Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  professionalServices ProfessionalService[]
+  queueEntries         QueueEntry[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([businessId, active])
+  @@map("services")
+}
+
+model Professional {
+  id            String                @id @default(cuid())
+  businessId    String
+  name          String                @db.VarChar(120)
+  chairLabel    String?               @db.VarChar(40)
+  ticketPrefix  String                @db.VarChar(4)
+  active        Boolean               @default(true)
+  business      Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services      ProfessionalService[]
+  queueEntries  QueueEntry[]
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@unique([businessId, ticketPrefix])
+  @@index([businessId, active])
+  @@map("professionals")
+}
+
+model ProfessionalService {
+  id             String       @id @default(cuid())
+  professionalId String
+  serviceId      String
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  service        Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([professionalId, serviceId])
+  @@map("professional_services")
+}
+
+model QueueSettings {
+  id                  String   @id @default(cuid())
+  businessId          String   @unique
+  isOpen              Boolean  @default(false)
+  maxWaiting          Int      @default(20)
+  notifyAhead         Int      @default(2)
+  callTimeoutMinutes  Int      @default(5)
+  allowAnyProfessional Boolean @default(true)
+  business            Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  updatedAt           DateTime @updatedAt
+
+  @@map("queue_settings")
+}
+
+// Um contador por estabelecimento, dia local e prefixo.
+// Ex.: B-01, B-02, A-01.
+model QueueCounter {
+  id         String   @id @default(cuid())
+  businessId String
+  day        String   @db.VarChar(10) // YYYY-MM-DD na timezone do estabelecimento
+  prefix     String   @db.VarChar(4)
+  lastNumber Int      @default(0)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, day, prefix])
+  @@map("queue_counters")
+}
+
+model QueueEntry {
+  id                    String         @id @default(cuid())
+  businessId            String
+  serviceId             String
+  professionalId        String? // null = quem estiver livre
+  customerName          String         @db.VarChar(120)
+  customerPhone         String         @db.VarChar(20)
+  ticketCode            String         @db.VarChar(20) // B-07
+  queueDay              String         @db.VarChar(10) // YYYY-MM-DD local
+  publicToken           String         @unique @default(uuid())
+  status                QueueStatus    @default(WAITING)
+  estimatedMinutesAtJoin Int?
+  joinedAt              DateTime       @default(now())
+  calledAt              DateTime?
+  callExpiresAt         DateTime?
+  startedAt             DateTime?
+  completedAt           DateTime?
+  canceledAt            DateTime?
+  assignedAt            DateTime?
+  business              Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  service               Service        @relation(fields: [serviceId], references: [id])
+  professional          Professional?  @relation(fields: [professionalId], references: [id])
+  events                QueueEvent[]
+  notifications         Notification[]
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  @@unique([businessId, queueDay, ticketCode])
+  @@index([businessId, queueDay, status, joinedAt])
+  @@index([professionalId, status, joinedAt])
+  @@map("queue_entries")
+}
+
+model QueueEvent {
+  id           String         @id @default(cuid())
+  queueEntryId String
+  type         QueueEventType
+  actorUserId  String? // referência informativa ao usuário que executou a ação
+  details      Json?
+  createdAt    DateTime       @default(now())
+  queueEntry   QueueEntry     @relation(fields: [queueEntryId], references: [id], onDelete: Cascade)
+
+  @@index([queueEntryId, createdAt])
+  @@map("queue_events")
+}
+
+model Notification {
+  id                 String             @id @default(cuid())
+  queueEntryId       String
+  type               NotificationType
+  status             NotificationStatus @default(PENDING)
+  recipientPhone     String             @db.VarChar(20)
+  providerMessageId  String?
+  attempts           Int                @default(0)
+  lastError          String?            @db.Text
+  scheduledAt        DateTime           @default(now())
+  sentAt             DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  queueEntry         QueueEntry         @relation(fields: [queueEntryId], references: [id], onDelete: Cascade)
+
+  @@unique([queueEntryId, type])
+  @@index([status, scheduledAt])
+  @@map("notifications")
+}
+
+model Comment {
+  id           String        @id @default(cuid())
+  businessId   String
+  customerName String        @db.VarChar(120)
+  content      String        @db.Text
+  status       CommentStatus @default(PENDING)
+  createdAt    DateTime      @default(now())
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, status])
+  @@map("comments")
+}
